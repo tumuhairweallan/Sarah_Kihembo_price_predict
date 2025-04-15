@@ -1,151 +1,170 @@
-import streamlit as st
 import pandas as pd
-import math
-from pathlib import Path
+import streamlit as st
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import plotly.express as px
+import joblib
+import warnings
 
-# Set the title and favicon that appear in the Browser's tab bar.
-st.set_page_config(
-    page_title='GDP dashboard',
-    page_icon=':earth_americas:', # This is an emoji shortcode. Could be a URL too.
-)
+from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from xgboost import XGBRegressor
 
-# -----------------------------------------------------------------------------
-# Declare some useful functions.
+warnings.filterwarnings("ignore")
 
-@st.cache_data
-def get_gdp_data():
-    """Grab GDP data from a CSV file.
+# --------------------------------
+# Page Config & Title
+# --------------------------------
+st.set_page_config(page_title="🌾 Food Price Prediction", layout="wide")
+st.title("🌾 Food Price Prediction App")
+st.markdown("Analyze and forecast agricultural product prices using Machine Learning.")
 
-    This uses caching to avoid having to read the file every time. If we were
-    reading from an HTTP endpoint instead of a file, it's a good idea to set
-    a maximum age to the cache with the TTL argument: @st.cache_data(ttl='1d')
-    """
+# --------------------------------
+# Load Dataset
+# --------------------------------
+file_path = "world_bank_cleaned.csv"
+df = pd.read_csv(file_path)
 
-    # Instead of a CSV on disk, you could read from an HTTP endpoint here too.
-    DATA_FILENAME = Path(__file__).parent/'data/gdp_data.csv'
-    raw_gdp_df = pd.read_csv(DATA_FILENAME)
+# Convert 'Date' column
+df["Date"] = pd.to_datetime(df["Date"], errors='coerce')
+df["Year"] = df["Date"].dt.year
+df["Month"] = df["Date"].dt.month
+df["Day"] = df["Date"].dt.day
+df['Avg_price'] = df[['Open', 'High', 'Low', 'Close']].mean(axis=1)
 
-    MIN_YEAR = 1960
-    MAX_YEAR = 2022
+# Clean up and drop unnecessary columns
+df = df.drop(columns=['Country', 'Region', 'Market', 'Open', 'High', 'Low', 'Close', 'Currency'])
+df = df.iloc[1:].reset_index(drop=True)
 
-    # The data above has columns like:
-    # - Country Name
-    # - Country Code
-    # - [Stuff I don't care about]
-    # - GDP for 1960
-    # - GDP for 1961
-    # - GDP for 1962
-    # - ...
-    # - GDP for 2022
-    #
-    # ...but I want this instead:
-    # - Country Name
-    # - Country Code
-    # - Year
-    # - GDP
-    #
-    # So let's pivot all those year-columns into two: Year and GDP
-    gdp_df = raw_gdp_df.melt(
-        ['Country Code'],
-        [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
-        'Year',
-        'GDP',
-    )
+# Encode categorical
+categorical_cols = df.select_dtypes(include='object').columns
+label_encoders = {}
+for col in categorical_cols:
+    le = LabelEncoder()
+    df[col] = le.fit_transform(df[col])
+    label_encoders[col] = le
 
-    # Convert years from string to integers
-    gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
+# Features & Target
+X = df.drop(columns=["Date", "Avg_price"])
+y = df["Avg_price"]
 
-    return gdp_df
+# Train/Test Split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-gdp_df = get_gdp_data()
+# --------------------------------
+# Train Models
+# --------------------------------
+models = {
+    "Linear Regression": LinearRegression(),
+    "Random Forest": RandomForestRegressor(),
+    "Gradient Boosting": GradientBoostingRegressor(),
+    "XGBoost": XGBRegressor()
+}
 
-# -----------------------------------------------------------------------------
-# Draw the actual page
+results = {}
+best_model = None
+best_model_name = None
+best_r2 = float('-inf')
 
-# Set the title that appears at the top of the page.
-'''
-# :earth_americas: GDP dashboard
+for name, model in models.items():
+    model.fit(X_train, y_train)
+    y_pred = model.predict(X_test)
 
-Browse GDP data from the [World Bank Open Data](https://data.worldbank.org/) website. As you'll
-notice, the data only goes to 2022 right now, and datapoints for certain years are often missing.
-But it's otherwise a great (and did I mention _free_?) source of data.
-'''
+    r2 = r2_score(y_test, y_pred)
+    mae = mean_absolute_error(y_test, y_pred)
+    mse = mean_squared_error(y_test, y_pred)
 
-# Add some spacing
-''
-''
+    results[name] = {"MAE": mae, "MSE": mse, "R2 Score": r2}
 
-min_value = gdp_df['Year'].min()
-max_value = gdp_df['Year'].max()
+    if r2 > best_r2:
+        best_r2 = r2
+        best_model = model
+        best_model_name = name
 
-from_year, to_year = st.slider(
-    'Which years are you interested in?',
-    min_value=min_value,
-    max_value=max_value,
-    value=[min_value, max_value])
+results_df = pd.DataFrame(results).T.sort_values(by="R2 Score", ascending=False)
 
-countries = gdp_df['Country Code'].unique()
+# Save best model
+joblib.dump(best_model, "food_price_model.pkl")
 
-if not len(countries):
-    st.warning("Select at least one country")
+# --------------------------------
+# TABS LAYOUT
+# --------------------------------
+tab1, tab2, tab3 = st.tabs(["📊 EDA", "🧠 Model Results", "🎯 Prediction"])
 
-selected_countries = st.multiselect(
-    'Which countries would you like to view?',
-    countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
+# --------------------------------
+# Tab 1: EDA
+# --------------------------------
+with tab1:
+    st.subheader("📌 Dataset Overview")
+    st.dataframe(df.head())
 
-''
-''
-''
+    st.markdown("### Product Price Distribution")
+    fig1, ax1 = plt.subplots()
+    sns.histplot(df['Avg_price'], kde=True, ax=ax1)
+    st.pyplot(fig1)
 
-# Filter the data
-filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
-    & (gdp_df['Year'] <= to_year)
-    & (from_year <= gdp_df['Year'])
-]
+    st.markdown("### Box Plot (Outliers)")
+    fig2, ax2 = plt.subplots()
+    sns.boxplot(x=df['Avg_price'], ax=ax2)
+    st.pyplot(fig2)
 
-st.header('GDP over time', divider='gray')
+    st.markdown("### 📈 Price Trend of 'Rice'")
+    rice_df = df[df['Product'] == label_encoders['Product'].transform(['rice'])[0]]
+    fig3 = px.line(rice_df, x='Date', y='Avg_price', title='Rice Price Over Time')
+    st.plotly_chart(fig3)
 
-''
+# --------------------------------
+# Tab 2: Model Results
+# --------------------------------
+with tab2:
+    st.subheader("🧠 Model Performance")
+    st.dataframe(results_df)
 
-st.line_chart(
-    filtered_gdp_df,
-    x='Year',
-    y='GDP',
-    color='Country Code',
-)
+    st.markdown("### Feature Importance (Top Model)")
+    importances = best_model.feature_importances_
+    feat_importances = pd.Series(importances, index=X_train.columns).sort_values()
 
-''
-''
+    fig4, ax4 = plt.subplots()
+    sns.barplot(x=feat_importances, y=feat_importances.index, ax=ax4)
+    st.pyplot(fig4)
 
+    st.markdown("### Actual vs. Predicted")
+    y_pred = best_model.predict(X_test)
+    fig5, ax5 = plt.subplots()
+    sns.scatterplot(x=y_test, y=y_pred, alpha=0.6, ax=ax5)
+    ax5.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--')
+    ax5.set_xlabel('Actual')
+    ax5.set_ylabel('Predicted')
+    st.pyplot(fig5)
 
-first_year = gdp_df[gdp_df['Year'] == from_year]
-last_year = gdp_df[gdp_df['Year'] == to_year]
+# --------------------------------
+# Tab 3: Prediction
+# --------------------------------
+with tab3:
+    st.subheader("🎯 Predict Average Food Price")
 
-st.header(f'GDP in {to_year}', divider='gray')
+    product_list = label_encoders['Product'].classes_
+    selected_product = st.selectbox("Select Product", product_list)
+    year = st.slider("Year", 2007, 2030, 2025)
+    month = st.slider("Month", 1, 12, 4)
+    day = st.slider("Day", 1, 31, 15)
 
-''
+    encoded_product = label_encoders['Product'].transform([selected_product])[0]
+    user_input = np.array([[encoded_product, year, month, day]])
 
-cols = st.columns(4)
+    prediction = best_model.predict(user_input)[0]
+    st.success(f"💰 Predicted Price for **{selected_product}** on **{year}-{month:02}-{day:02}** is **{prediction:.2f}**")
 
-for i, country in enumerate(selected_countries):
-    col = cols[i % len(cols)]
+    # Optional download
+    with open("food_price_model.pkl", "rb") as f:
+        st.download_button("📥 Download Trained Model", f, "food_price_model.pkl")
 
-    with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-
-        if math.isnan(first_gdp):
-            growth = 'n/a'
-            delta_color = 'off'
-        else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
-            delta_color = 'normal'
-
-        st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
-            delta=growth,
-            delta_color=delta_color
-        )
+# --------------------------------
+# Footer
+# --------------------------------
+st.markdown("---")
+st.caption("Made with ❤️ by SARAH KIHEMBO · Powered by Streamlit & ML")
