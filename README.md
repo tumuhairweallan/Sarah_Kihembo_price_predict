@@ -1,19 +1,19 @@
-# :earth_americas: GDP dashboard template
+# 🌾 Food Price Prediction App
 
-A simple Streamlit app showing the GDP of different countries in the world.
+This project is a **machine learning-powered Streamlit web app** that analyzes and predicts food prices across different markets and products using historical data from the World Bank.
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://gdp-dashboard-template.streamlit.app/)
+---
 
-### How to run it on your own machine
+## 🚀 Features
 
-1. Install the requirements
+- 📊 **Exploratory Data Analysis (EDA)** with interactive charts
+- 🧠 **Multiple ML models**: Linear Regression, Random Forest, Gradient Boosting, XGBoost
+- 🥇 Automatically selects and saves the **best-performing model**
+- 🎯 **Interactive predictions** based on user input (product, date)
+- 📉 Visualizations: price trends, distribution, feature importance, and model performance
+- 💾 Model download option for offline use
 
-   ```
-   $ pip install -r requirements.txt
-   ```
+---
 
-2. Run the app
+## 📂 Project Structure
 
-   ```
-   $ streamlit run streamlit_app.py
-   ```
