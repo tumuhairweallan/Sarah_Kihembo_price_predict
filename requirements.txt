@@ -6,3 +6,4 @@ seaborn
 scikit-learn
 xgboost
 plotly
+stream-lottie
