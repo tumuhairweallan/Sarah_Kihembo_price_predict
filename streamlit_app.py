@@ -1,31 +1,65 @@
 import pandas as pd
 import streamlit as st
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-import plotly.express as px
 import joblib
 import warnings
+import seaborn as sns
+import plotly.express as px
+import matplotlib.pyplot as plt
+import time
+from streamlit_lottie import st_lottie
+import json
 
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from xgboost import XGBRegressor
 
 warnings.filterwarnings("ignore")
 
-# --------------------------------
-# Page Config & Title
-# --------------------------------
-st.set_page_config(page_title="🌾 Food Price Prediction", layout="wide")
-st.title("🌾 Food Price Prediction App")
-st.markdown("Analyze and forecast agricultural product prices using Machine Learning.")
+# Page Configuration
+st.set_page_config(page_title="🌾 Food Price Predictor", layout="centered")
 
-# --------------------------------
+# Custom CSS for Styling
+st.markdown("""
+    <style>
+    .stButton>button {
+        background-color: #FF5733;
+        color: white;
+        font-size: 18px;
+        padding: 10px;
+        transition: 0.3s;
+    }
+    .stButton>button:hover {
+        background-color: #D4422B;
+        transform: scale(1.05);
+    }
+    .stTitle {
+        text-align: center;
+        color: #4CAF50;
+    }
+    .stCaption {
+        text-align: center;
+        color: gray;
+        font-style: italic;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# Header
+st.title("🌾 Food Price Predicting App")
+st.markdown("Predict the future prices of farm produces. **Note:** Prediction is not 100% accurate.")
+
+# Load Lottie Animation
+def load_lottie(filepath):
+    with open(filepath, "r") as f:
+        return json.load(f)
+
+lottie_animation = load_lottie("prediction_animation.json")
+st_lottie(lottie_animation, speed=1, height=200, key="header_animation")
+
 # Load Dataset
-# --------------------------------
 file_path = "world_bank_cleaned.csv"
 df = pd.read_csv(file_path)
 
@@ -55,9 +89,7 @@ y = df["Avg_price"]
 # Train/Test Split
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# --------------------------------
 # Train Models
-# --------------------------------
 models = {
     "Linear Regression": LinearRegression(),
     "Random Forest": RandomForestRegressor(),
@@ -65,106 +97,52 @@ models = {
     "XGBoost": XGBRegressor()
 }
 
-results = {}
 best_model = None
-best_model_name = None
 best_r2 = float('-inf')
 
 for name, model in models.items():
     model.fit(X_train, y_train)
-    y_pred = model.predict(X_test)
-
-    r2 = r2_score(y_test, y_pred)
-    mae = mean_absolute_error(y_test, y_pred)
-    mse = mean_squared_error(y_test, y_pred)
-
-    results[name] = {"MAE": mae, "MSE": mse, "R2 Score": r2}
-
+    r2 = model.score(X_test, y_test)
     if r2 > best_r2:
         best_r2 = r2
         best_model = model
-        best_model_name = name
 
-results_df = pd.DataFrame(results).T.sort_values(by="R2 Score", ascending=False)
-
-# Save best model
 joblib.dump(best_model, "food_price_model.pkl")
 
-# --------------------------------
-# TABS LAYOUT
-# --------------------------------
-tab1, tab2, tab3 = st.tabs(["📊 EDA", "🧠 Model Results", "🎯 Prediction"])
+# User Input
+st.subheader("🎯 Predict Food Price")
+product_list = label_encoders['Product'].classes_
+selected_product = st.selectbox("Select Product", product_list)
+year = st.slider("Year", 2007, 2030, 2025)
+month = st.slider("Month", 1, 12, 4)
+day = st.slider("Day", 1, 31, 15)
 
-# --------------------------------
-# Tab 1: EDA
-# --------------------------------
-with tab1:
-    st.subheader("📌 Dataset Overview")
-    st.dataframe(df.head())
+encoded_product = label_encoders['Product'].transform([selected_product])[0]
+user_input = np.array([[encoded_product, year, month, day]])
 
-    st.markdown("### Product Price Distribution")
-    fig1, ax1 = plt.subplots()
-    sns.histplot(df['Avg_price'], kde=True, ax=ax1)
-    st.pyplot(fig1)
-
-    st.markdown("### Box Plot (Outliers)")
-    fig2, ax2 = plt.subplots()
-    sns.boxplot(x=df['Avg_price'], ax=ax2)
-    st.pyplot(fig2)
-
-    st.markdown("### 📈 Price Trend of 'Rice'")
-    rice_df = df[df['Product'] == label_encoders['Product'].transform(['rice'])[0]]
-    fig3 = px.line(rice_df, x='Date', y='Avg_price', title='Rice Price Over Time')
-    st.plotly_chart(fig3)
-
-# --------------------------------
-# Tab 2: Model Results
-# --------------------------------
-with tab2:
-    st.subheader("🧠 Model Performance")
-    st.dataframe(results_df)
-
-    st.markdown("### Feature Importance (Top Model)")
-    importances = best_model.feature_importances_
-    feat_importances = pd.Series(importances, index=X_train.columns).sort_values()
-
-    fig4, ax4 = plt.subplots()
-    sns.barplot(x=feat_importances, y=feat_importances.index, ax=ax4)
-    st.pyplot(fig4)
-
-    st.markdown("### Actual vs. Predicted")
-    y_pred = best_model.predict(X_test)
-    fig5, ax5 = plt.subplots()
-    sns.scatterplot(x=y_test, y=y_pred, alpha=0.6, ax=ax5)
-    ax5.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--')
-    ax5.set_xlabel('Actual')
-    ax5.set_ylabel('Predicted')
-    st.pyplot(fig5)
-
-# --------------------------------
-# Tab 3: Prediction
-# --------------------------------
-with tab3:
-    st.subheader("🎯 Predict Average Food Price")
-
-    product_list = label_encoders['Product'].classes_
-    selected_product = st.selectbox("Select Product", product_list)
-    year = st.slider("Year", 2007, 2030, 2025)
-    month = st.slider("Month", 1, 12, 4)
-    day = st.slider("Day", 1, 31, 15)
-
-    encoded_product = label_encoders['Product'].transform([selected_product])[0]
-    user_input = np.array([[encoded_product, year, month, day]])
-
-    prediction = best_model.predict(user_input)[0]
+# Prediction Button
+if st.button("Predict Food Price"):
+    with st.spinner("⚙️ Predicting... Please wait!"):
+        time.sleep(2)  # Simulated delay
+        prediction = best_model.predict(user_input)[0]
+    
     st.success(f"💰 Predicted Price for **{selected_product}** on **{year}-{month:02}-{day:02}** is **{prediction:.2f}**")
 
-    # Optional download
-    with open("food_price_model.pkl", "rb") as f:
-        st.download_button("📥 Download Trained Model", f, "food_price_model.pkl")
+    # Show Charts after Prediction
+    st.subheader("📈 Price Trends & Insights")
 
-# --------------------------------
+    # Distribution Chart
+    st.markdown("### Product Price Distribution")
+    fig1 = px.histogram(df, x='Avg_price', title="Price Distribution")
+    st.plotly_chart(fig1)
+
+    # Price Trend Over Time
+    st.markdown(f"### 📊 Price Trend for {selected_product}")
+    product_encoded = label_encoders['Product'].transform([selected_product])[0]
+    filtered_df = df[df['Product'] == product_encoded]
+    fig2 = px.line(filtered_df, x='Date', y='Avg_price', title=f"{selected_product} Price Over Time")
+    st.plotly_chart(fig2)
+
 # Footer
-# --------------------------------
 st.markdown("---")
-st.caption("Made with ❤️ by SARAH KIHEMBO · Powered by Streamlit & ML")
+st.caption("Made with ❤️ · Powered by Streamlit & Machine Learning")
