@@ -1,9 +1,6 @@
 streamlit
 pandas
 numpy
-matplotlib
-seaborn
 scikit-learn
 xgboost
 plotly
-stream-lottie
